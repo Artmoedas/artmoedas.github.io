@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Painel — Artmoedas_rifa (Admin)</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;background:#071022;color:#eaf3fb;margin:0;padding:18px}
+  .wrap{max-width:980px;margin:0 auto}
+  .box{background:#071622;padding:14px;border-radius:8px}
+  input[type="password"], input[type="text"], input[type="tel"]{padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,.06);background:#041018;color:#eaf3fb;width:300px}
+  button{background:#0ea5a4;color:#041018;padding:8px 12px;border-radius:6px;border:none;cursor:pointer;font-weight:700}
+  table{width:100%;border-collapse:collapse;margin-top:14px}
+  th,td{padding:8px;border-bottom:1px solid rgba(255,255,255,.03);text-align:left;color:#dbefff}
+  .small{color:#9fb0c0;font-size:13px}
+  .danger{background:#ff6b6b;color:#081014;padding:6px 10px;border-radius:6px}
+  .csvbtn{background:#f59e0b;color:#071018;padding:8px 10px;border-radius:6px;border:none;cursor:pointer}
+  .sold-badge{display:inline-block;background:#ff6b00;color:#071018;padding:4px 8px;border-radius:6px;font-weight:700}
+  .grid{display:grid;grid-template-columns:repeat(10,1fr);gap:6px;margin-top:12px}
+  .cell{padding:6px;border-radius:4px;text-align:center;background:#041722;color:#dff3ff;cursor:pointer}
+  .cell.sold{background:#3a3f44;color:#9ea3a8;cursor:default}
+  .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h2>Painel Administrativo — Artmoedas_rifa</h2>
+  <div class="box" id="loginBox">
+    <div class="small">Digite a senha de administrador para acessar o painel.</div>
+    <div style="margin-top:8px">
+      <input id="pwd" type="password" placeholder="senha admin">
+      <button id="loginBtn">Entrar</button>
+    </div>
+    <div class="small" style="margin-top:8px">Senha padrão: <strong>artmoedas-admin-2025</strong> — altere no arquivo se quiser.</div>
+  </div>
+
+  <div class="box" id="adminArea" style="margin-top:14px;display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div class="small">Registrar venda (para vendas efetuadas fora da plataforma)</div>
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input id="clientName" type="text" placeholder="Nome do cliente">
+          <input id="clientPhone" type="tel" placeholder="WhatsApp (5599...)">
+          <input id="numsInput" type="text" placeholder="Números (ex: 01,02,10)">
+          <button id="registerBtn">Registrar venda</button>
+        </div>
+      </div>
+      <div style="text-align:right">
+        <button id="exportCsv" class="csvbtn">Exportar CSV</button>
+        <button id="clearAll" class="danger">Limpar todas</button>
+      </div>
+    </div>
+
+    <div style="margin-top:16px">
+      <div class="small">Clique nas células para marcar/desmarcar números vendidos.</div>
+      <div class="grid" id="grid"></div>
+    </div>
+
+    <table id="table" aria-live="polite">
+      <thead><tr><th>Nome</th><th>Telefone</th><th>Números</th><th>Total (R$)</th><th>Data</th></tr></thead>
+      <tbody></tbody>
+    </table>
+
+    <div class="small" style="margin-top:10px">OBS: os dados ficam em localStorage neste navegador. Use este painel num computador seguro e mantenha o link /painel.html privado.</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const adminPassword = 'artmoedas-admin-2025';
+  const soldKey = 'artmoedas_sold';
+  const salesKey = 'artmoedas_sales'; // list of sale records (name,phone,nums,total,ts)
+  const price = 2.50;
+
+  const loginBtn = document.getElementById('loginBtn');
+  const pwd = document.getElementById('pwd');
+  const adminArea = document.getElementById('adminArea');
+  const loginBox = document.getElementById('loginBox');
+  const tbody = document.querySelector('#table tbody');
+  const grid = document.getElementById('grid');
+
+  loginBtn.addEventListener('click', ()=>{
+    if(pwd.value === adminPassword){
+      loginBox.style.display='none';
+      adminArea.style.display='block';
+      buildGrid();
+      loadTable();
+    } else alert('Senha incorreta.');
+  });
+
+  function getSold(){ try{ return JSON.parse(localStorage.getItem(soldKey) || '[]'); }catch(e){ return []; } }
+  function setSold(arr){ localStorage.setItem(soldKey, JSON.stringify(arr)); }
+
+  function getSales(){ try{ return JSON.parse(localStorage.getItem(salesKey) || '[]'); }catch(e){ return []; } }
+  function setSales(arr){ localStorage.setItem(salesKey, JSON.stringify(arr)); }
+
+  // build 100 cell grid
+  function buildGrid(){
+    grid.innerHTML='';
+    const sold = getSold();
+    for(let i=1;i<=100;i++){
+      const n = String(i).padStart(2,'0');
+      const div = document.createElement('div');
+      div.className='cell';
+      div.textContent = n;
+      div.dataset.num = n;
+      if(sold.some(s=>s.num===n)){
+        div.classList.add('sold');
+        div.title = 'Vendido';
+      } else {
+        div.addEventListener('click', ()=> toggleSell(div));
+      }
+      grid.appendChild(div);
+    }
+  }
+
+  function toggleSell(div){
+    const n = div.dataset.num;
+    // mark sold by asking for client details
+    const name = prompt('Nome do comprador para o número ' + n + ' (ou deixe vazio para só marcar como vendido):');
+    let phone = '';
+    if(name !== null){
+      phone = prompt('WhatsApp do comprador (ex: 5599XXXXXXXX). Deixe vazio se preferir:') || '';
+      // confirm
+      if(!confirm('Confirmar marcar ' + n + ' como vendido?')) return;
+      // save to sold and sales
+      const soldArr = getSold();
+      soldArr.push({num:n, buyerName:name||'', buyerPhone:phone||'', ts: new Date().toISOString()});
+      setSold(soldArr);
+      const salesArr = getSales();
+      const total = price.toFixed(2);
+      salesArr.push({name: name||'', phone: phone||'', nums:[n], total: total, ts: new Date().toISOString()});
+      setSales(salesArr);
+      // update UI
+      div.classList.add('sold');
+      div.removeEventListener('click', ()=> toggleSell(div));
+      loadTable();
+      alert('Número marcado como vendido.');
+    }
+  }
+
+  // register sale (multiple numbers)
+  document.getElementById('registerBtn').addEventListener('click', ()=>{
+    const name = document.getElementById('clientName').value.trim();
+    const phone = document.getElementById('clientPhone').value.trim();
+    const numsRaw = document.getElementById('numsInput').value.trim();
+    if(!numsRaw){ alert('Informe os números.'); return; }
+    const nums = numsRaw.split(',').map(s=>s.trim().padStart(2,'0')).filter(s=>s);
+    if(!nums.length){ alert('Números inválidos.'); return; }
+    // check conflicts with already sold
+    const soldArr = getSold();
+    const conflicts = soldArr.filter(s=> nums.includes(s.num)).map(s=>s.num);
+    if(conflicts.length && !confirm('Alguns números já estão marcados vendidos: ' + conflicts.join(', ') + '. Deseja continuar e registrar mesmo assim?')) return;
+    // add sold entries
+    nums.forEach(n=>{
+      soldArr.push({num:n, buyerName:name, buyerPhone:phone, ts: new Date().toISOString()});
+    });
+    setSold(soldArr);
+    // add sales record
+    const salesArr = getSales();
+    const total = (nums.length * price).toFixed(2);
+    salesArr.push({name, phone, nums, total, ts: new Date().toISOString()});
+    setSales(salesArr);
+    // clear inputs
+    document.getElementById('clientName').value='';
+    document.getElementById('clientPhone').value='';
+    document.getElementById('numsInput').value='';
+    buildGrid();
+    loadTable();
+    alert('Venda registrada com sucesso.');
+  });
+
+  function loadTable(){
+    const sales = getSales();
+    tbody.innerHTML='';
+    if(!sales.length){
+      tbody.innerHTML = '<tr><td colspan="5" class="small">Nenhuma venda registrada neste navegador.</td></tr>';
+      return;
+    }
+    sales.forEach(s=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${escapeHtml(s.name||'')}</td>
+                      <td>${escapeHtml(s.phone||'')}</td>
+                      <td>${escapeHtml((s.nums||[]).join(', '))}</td>
+                      <td>R$ ${Number(s.total).toFixed(2)}</td>
+                      <td>${new Date(s.ts).toLocaleString()}</td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  document.getElementById('exportCsv').addEventListener('click', ()=>{
+    const sales = getSales();
+    if(!sales.length){ alert('Sem vendas para exportar.'); return; }
+    const header = ['Nome','Telefone','Números','Total','Data'];
+    const rows = sales.map(r=>[r.name||'', r.phone||'', (r.nums||[]).join(' '), r.total||'', r.ts||'']);
+    let csv = header.join(';') + '\n' + rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(';')).join('\n');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'vendas_artmoedas.csv'; a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById('clearAll').addEventListener('click', ()=>{
+    if(confirm('Limpar todas as vendas e marcadores de vendidos neste navegador? Esta ação é irreversível.')) {
+      localStorage.removeItem(soldKey);
+      localStorage.removeItem(salesKey);
+      buildGrid();
+      loadTable();
+    }
+  });
+
+  function escapeHtml(s){
+    return String(s || '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
+  }
+
+})();
+</script>
+</body>
+</html>
